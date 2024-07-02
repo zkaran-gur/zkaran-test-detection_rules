@@ -1,0 +1,46 @@
+name: Push to Production Sync
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'version.lock.json'
+  workflow_dispatch:
+    inputs:
+      sync_rules_from_elastic:
+        description: 'Push rules to Elastic Security Prod (true/false)'
+        required: true
+        default: 'false'
+
+jobs:
+  sync-to-production:
+    runs-on: ubuntu-latest
+    env:
+      CUSTOM_RULES_DIR: ${{ secrets.CUSTOM_RULES_DIR }}
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.12'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip cache purge
+        pip install .[dev]
+        pip install lib/kql lib/kibana
+
+    - name: Export Rules from Repo to NDJSON
+      run: python -m detection_rules export-rules-from-repo -d custom-rules --outfile rules_export.ndjson
+
+    - name: Import Rules to Kibana from NDJSON
+      run: python -m detection_rules kibana --cloud-id ${{ secrets.CLOUD_ID }} -ku ${{ secrets.KIBANA_USERNAME }} -kp ${{ secrets.KIBANA_PASSWORD }} import-rules -d custom-rules --overwrite
+      env:
+        KIBANA_URL: ${{ env.ELASTIC_KIBANA_URL }}
+        KIBANA_USERNAME: ${{ env.ELASTIC_USERNAME }}
+        KIBANA_PASSWORD: ${{ env.ELASTIC_PASSWORD }}
